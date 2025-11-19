@@ -1,7 +1,7 @@
 # ヘッダ行付きのCSVをプロット
 import pandas as pd
 import matplotlib.pyplot as plt
-from plot_csv_param import file_name, x_col, y_col, show_line
+from plot_csv_param import file_name, x_col, y_col, show_line, skip_count
 import numpy as np
 
 try:
@@ -13,8 +13,8 @@ try:
     y_label = df.columns[y_col]
 
     # x軸とy軸のデータをインデックスで抽出
-    x_data = df.iloc[:, x_col]
-    y_data = df.iloc[:, y_col]
+    x_data = df.iloc[:, x_col][skip_count:]
+    y_data = df.iloc[:, y_col][skip_count:]
 
 except IndexError:
     print("エラー: 指定された列インデックスがファイルの列数を超えています。x_colとy_colを確認してください。")
@@ -28,7 +28,7 @@ except Exception as e:
     exit()
 
 
-print("min:", np.min(y_data), "max", np.max(y_data), "mean:", np.mean(y_data), "variance:", np.var(y_data))
+print("min:", np.min(y_data), "max", np.max(y_data), "mean:", np.mean(y_data), "std:", np.std(y_data), "correlation", np.corrcoef(x_data, y_data)[0,1])
 plt.figure(figsize=(10, 6))
 if(show_line):
     plt.plot(x_data, y_data)
