@@ -2,6 +2,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from plot_csv_param import file_name, x_col, y_col, show_line
+import numpy as np
 
 try:
     # CSV読み込み
@@ -27,6 +28,7 @@ except Exception as e:
     exit()
 
 
+print("min:", np.min(y_data), "max", np.max(y_data), "mean:", np.mean(y_data), "variance:", np.var(y_data))
 plt.figure(figsize=(10, 6))
 if(show_line):
     plt.plot(x_data, y_data)
