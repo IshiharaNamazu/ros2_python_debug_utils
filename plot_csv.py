@@ -1,6 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-from plot_csv_param import file_name, x_col, y_col
+from plot_csv_param import file_name, x_col, y_col, show_line
 
 try:
     # CSVファイルを読み込む (ヘッダー行を列名として使用)
@@ -27,14 +27,17 @@ except Exception as e:
     exit()
 
 
-# プロットを作成
+# プロットを作成（線を消して点のみ表示）
 plt.figure(figsize=(10, 6))
-plt.plot(x_data, y_data, marker='.', linestyle='-', markersize=2)
+if(show_line):
+    plt.plot(x_data, y_data)
+else:
+    plt.scatter(x_data, y_data, s=6)
 
 # ラベルとタイトルにヘッダー行の値を使用
 plt.title(f'Plot of {y_label} vs {x_label}')
 # x軸のラベルに元の列名を使用し、スケーリングしたことを明記
-plt.xlabel(f'{x_label} ($10^{{-9}}$ unit)')
+plt.xlabel(x_label)
 plt.ylabel(y_label)
 
 # グリッド表示
