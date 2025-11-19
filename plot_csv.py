@@ -1,10 +1,10 @@
+# ヘッダ行付きのCSVをプロット
 import pandas as pd
 import matplotlib.pyplot as plt
 from plot_csv_param import file_name, x_col, y_col, show_line
 
 try:
-    # CSVファイルを読み込む (ヘッダー行を列名として使用)
-    # header=Noneを削除することで、1行目を自動的に列名として扱います。
+    # CSV読み込み
     df = pd.read_csv(file_name)
 
     # x軸とy軸の列名（タイトル）を取得
@@ -27,7 +27,6 @@ except Exception as e:
     exit()
 
 
-# プロットを作成（線を消して点のみ表示）
 plt.figure(figsize=(10, 6))
 if(show_line):
     plt.plot(x_data, y_data)
@@ -36,7 +35,7 @@ else:
 
 # ラベルとタイトルにヘッダー行の値を使用
 plt.title(f'Plot of {y_label} vs {x_label}')
-# x軸のラベルに元の列名を使用し、スケーリングしたことを明記
+
 plt.xlabel(x_label)
 plt.ylabel(y_label)
 
