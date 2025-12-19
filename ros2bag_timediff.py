@@ -19,11 +19,17 @@ import matplotlib.pyplot as plt
 def export_time_differences():
     bag_path = Path(bag_path_str)
 
+    # ストレージIDの判定 (ディレクトリ指定の場合も考慮)
+    storage_id = 'mcap'
+    if bag_path.suffix == '.db3':
+        storage_id = 'sqlite3'
+    elif bag_path.is_dir() and any(bag_path.glob('*.db3')):
+        storage_id = 'sqlite3'
+
     # 1. SequentialReaderのセットアップ
     storage_options = StorageOptions(
         uri=str(bag_path),
-        # 拡張子 .db3 に基づいてストレージIDを切り替える
-        storage_id='sqlite3' if bag_path.suffix == '.db3' else 'mcap'
+        storage_id=storage_id
     )
     converter_options = ConverterOptions(
         input_serialization_format="cdr",
