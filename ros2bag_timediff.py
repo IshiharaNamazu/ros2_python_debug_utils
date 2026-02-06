@@ -2,6 +2,7 @@
 
 #param
 from ros2bag_timediff_param import bag_path_str
+from ros2bag_timediff_param import bag_dir
 from ros2bag_timediff_param import target_topics_list
 #from ros2bagtimediff_param import topic_type
 from ros2bag_timediff_param import output_filename
@@ -13,11 +14,28 @@ from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions, StorageFilter
 
+
+
 # plot
 import matplotlib.pyplot as plt
 
 def export_time_differences():
-    bag_path = Path(bag_path_str)
+    if(bag_path_str != ''):
+        bag_path = Path(bag_path_str)
+    else:
+        p = Path(bag_dir)
+        # ディレクトリのみリストアップする
+        folders = [x for x in p.iterdir() if x.is_dir()]
+        
+        if folders:
+            # 名前の降順（新しい順）に並べ替え
+            folders.sort(reverse=True)
+            # 一番上の要素を取得
+            bag_path = folders[0]
+            print(f'loading bag from: {bag_path.name}')
+        else:
+            print("there is no folder in the specified bag_dir")
+            exit()
 
     # ストレージIDの判定 (ディレクトリ指定の場合も考慮)
     storage_id = 'mcap'
