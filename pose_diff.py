@@ -6,6 +6,7 @@ from tf_transformations import quaternion_inverse, quaternion_multiply, quaterni
 
 from pose_diff_param import source_topic_name, source_topic_type, target_topic_name, target_topic_type, output_topic_name, output_topic_type
 from pose_diff_param import rotate_diff
+from pose_diff_param import is_use_sim_time
 class PoseDifferenceCalculator(Node):
     """
     PoseStamped メッセージの位置の差を計算し、新しいトピックに送信するノード。
@@ -14,6 +15,11 @@ class PoseDifferenceCalculator(Node):
     def __init__(self):
         # ノードの初期化
         super().__init__('pose_difference_calculator')
+
+        # use_sim_time
+        self.set_parameters([
+        rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, is_use_sim_time)
+        ])
 
         # 最後に受信したPoseStampedメッセージを保存する変数
         self.last_target_pose = None
