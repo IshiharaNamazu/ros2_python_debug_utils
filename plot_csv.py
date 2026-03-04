@@ -28,7 +28,7 @@ except Exception as e:
     exit()
 
 
-print("min:", np.min(y_data), "max", np.max(y_data), "mean:", np.mean(y_data), "std:", np.std(y_data), "correlation", np.corrcoef(x_data, y_data)[0,1])
+print("min:", np.min(y_data), "max", np.max(y_data), "mean:", np.mean(y_data), "median:", np.median(y_data), "std:", np.std(y_data), "var:", np.var(y_data), "correlation", np.corrcoef(x_data, y_data)[0,1])
 plt.figure(figsize=(10, 6))
 if(show_line):
     plt.plot(x_data, y_data)
