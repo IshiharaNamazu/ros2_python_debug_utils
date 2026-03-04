@@ -2,11 +2,14 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 import time
+import csv
 from tf_transformations import quaternion_inverse, quaternion_multiply, quaternion_conjugate
 
 from pose_diff_param import source_topic_name, source_topic_type, target_topic_name, target_topic_type, output_topic_name, output_topic_type
 from pose_diff_param import rotate_diff
 from pose_diff_param import is_use_sim_time
+
+from ros2bag_timediff_param import output_filename
 class PoseDifferenceCalculator(Node):
     """
     PoseStamped メッセージの位置の差を計算し、新しいトピックに送信するノード。
@@ -24,6 +27,24 @@ class PoseDifferenceCalculator(Node):
         # 最後に受信したPoseStampedメッセージを保存する変数
         self.last_target_pose = None
         self.last_source_pose = None
+
+        # CSVファイルへの書き出し準備
+        self.csv_file = None
+        self.csv_writer = None
+        try:
+            # 注意: output_filenameはros2bag_timediff_paramからインポートされています。
+            # 別のスクリプトと共有すると、ファイルが上書きされる可能性があります。
+            # pose_diff.py専用のファイル名をpose_diff_param.pyで定義することを推奨します。
+            self.csv_file = open(output_filename, 'w', newline='', encoding='utf-8')
+            fieldnames = [
+                'timestamp_sec', 'timestamp_nanosec',
+                'pos_x', 'pos_y', 'pos_z', 'ori_x', 'ori_y', 'ori_z', 'ori_w'
+            ]
+            self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=fieldnames)
+            self.csv_writer.writeheader()
+            self.get_logger().info(f"CSV output is enabled. Writing to '{output_filename}'.")
+        except IOError as e:
+            self.get_logger().error(f"Could not open CSV file '{output_filename}': {e}")
 
         # 受信トピックの購読設定
         self.target_subscriber = self.create_subscription(
@@ -117,16 +138,6 @@ class PoseDifferenceCalculator(Node):
             diff_msg.pose.position.x = diff_x
             diff_msg.pose.position.y = diff_y
             diff_msg.pose.position.z = diff_z
-            
-            # 姿勢(Quaternion)には回転の差分を格納
-            diff_msg.pose.orientation.x = q_diff[0]
-            diff_msg.pose.orientation.y = q_diff[1]
-            diff_msg.pose.orientation.z = q_diff[2]
-            diff_msg.pose.orientation.w = q_diff[3]
-
-            # 計算結果の送信
-            self.difference_publisher.publish(diff_msg)
-            return
         else:
             # 位置には計算したローカル差分ベクトルを格納
             # v_local は [0, x, y, z] の形式なので、要素 1, 2, 3 を取得
@@ -134,16 +145,37 @@ class PoseDifferenceCalculator(Node):
             diff_msg.pose.position.y = v_local[2]
             diff_msg.pose.position.z = v_local[3]
 
-            # 姿勢(Orientation)には、sourceから見たtargetの相対的な回転を格納
-            diff_msg.pose.orientation.x = q_diff[0]
-            diff_msg.pose.orientation.y = q_diff[1]
-            diff_msg.pose.orientation.z = q_diff[2]
-            diff_msg.pose.orientation.w = q_diff[3]
+        # 姿勢(Orientation)には、sourceから見たtargetの相対的な回転を格納
+        diff_msg.pose.orientation.x = q_diff[0]
+        diff_msg.pose.orientation.y = q_diff[1]
+        diff_msg.pose.orientation.z = q_diff[2]
+        diff_msg.pose.orientation.w = q_diff[3]
 
-            # 計算結果の送信
-            self.difference_publisher.publish(diff_msg)
+        # 計算結果の送信
+        self.difference_publisher.publish(diff_msg)
+        # CSVへの書き込み
+        self.write_to_csv(diff_msg)
+
+    def write_to_csv(self, msg):
+        if not self.csv_writer:
             return
+        try:
+            row = {
+                'timestamp_sec': msg.header.stamp.sec, 'timestamp_nanosec': msg.header.stamp.nanosec,
+                'pos_x': msg.pose.position.x, 'pos_y': msg.pose.position.y, 'pos_z': msg.pose.position.z,
+                'ori_x': msg.pose.orientation.x, 'ori_y': msg.pose.orientation.y, 'ori_z': msg.pose.orientation.z, 'ori_w': msg.pose.orientation.w
+            }
+            self.csv_writer.writerow(row)
+            self.csv_file.flush()
+        except Exception as e:
+            self.get_logger().warn(f"Failed to write to CSV file: {e}")
 
+    def destroy_node(self):
+        """ノード終了時にCSVファイルを閉じる"""
+        if self.csv_file:
+            self.get_logger().info(f"Closing CSV file '{output_filename}'.")
+            self.csv_file.close()
+        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
@@ -151,11 +183,14 @@ def main(args=None):
     pose_difference_calculator = PoseDifferenceCalculator()
 
     # ノードの実行（コールバックを待機）
-    rclpy.spin(pose_difference_calculator)
-
-    # 終了処理
-    pose_difference_calculator.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(pose_difference_calculator)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # 終了処理
+        pose_difference_calculator.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
