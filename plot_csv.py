@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from plot_csv_param import file_name, x_col, y_col, show_line, skip_count
 import numpy as np
 
+plt.rcParams["font.size"] = 24
+
 try:
     # CSV読み込み
     df = pd.read_csv(file_name)
