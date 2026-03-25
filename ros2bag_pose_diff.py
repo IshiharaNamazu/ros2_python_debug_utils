@@ -1,5 +1,7 @@
 import sys
 import csv
+import math
+import utm
 from pathlib import Path
 
 # ROS 2 関連
@@ -10,23 +12,73 @@ from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions, Stora
 # 姿勢計算用
 from tf_transformations import quaternion_multiply, quaternion_conjugate
 
-from ros2bag_timediff_param import bag_path_str, bag_dir, output_filename, source_topic_name, target_topic_name, rotate_diff
+from ros2bag_pose_diff_param import bag_path_str, bag_dir, output_filename, source_topic_name, target_topic_name, rotate_diff
 
 
-def calculate_pose_difference(source_pose, target_pose, rotate_diff):
+# --- 変換後のデータをPoseStampedと同じように扱うためのダミークラス ---
+class DummyPosition:
+    def __init__(self, x, y, z): self.x, self.y, self.z = x, y, z
+class DummyOrientation:
+    def __init__(self, x, y, z, w): self.x, self.y, self.z, self.w = x, y, z, w
+class DummyPose:
+    def __init__(self, pos, ori): self.position, self.orientation = pos, ori
+class DummyMsg:
+    def __init__(self, header, pose): self.header, self.pose = header, pose
+
+
+def convert_navsatfix_to_pose_msg(msg, prev_x, prev_y):
+    """
+    NavSatFixメッセージをPoseStamped相当のダミーオブジェクトに変換する
+    """
+    try:
+        # 1. 緯度・経度からUTM座標に変換
+        utm_x, utm_y, _, _ = utm.from_latlon(msg.latitude, msg.longitude)
+    except utm.error.OutOfRangeError as e:
+        print(f"警告: NavSatFixメッセージの緯度経度が不正です。スキップします。lat: {msg.latitude}, lon: {msg.longitude}, error: {e}")
+        return None, prev_x, prev_y
+    utm_z = msg.altitude
+
+    # 2. 前回値との差分からYaw角を計算
+    yaw = 0.0
+    if prev_x is not None and prev_y is not None:
+        diff_x = utm_x - prev_x
+        diff_y = utm_y - prev_y
+        if abs(diff_x) > 1e-6 or abs(diff_y) > 1e-6:
+            yaw = math.atan2(diff_y, diff_x)
+
+    # 3. クォータニオンに変換
+    qx, qy = 0.0, 0.0
+    qz = math.sin(yaw / 2.0)
+    qw = math.cos(yaw / 2.0)
+
+    # 4. オブジェクトの組み立て
+    pos = DummyPosition(utm_x, utm_y, utm_z)
+    ori = DummyOrientation(qx, qy, qz, qw)
+    pose = DummyPose(pos, ori)
+    
+    # ヘッダー情報の引き継ぎ (存在する場合)
+    header = getattr(msg, 'header', None)
+
+    return DummyMsg(header, pose), utm_x, utm_y
+
+def calculate_pose_difference(source_msg, target_msg, rotate_diff):
+    # PoseWithCovarianceStamped 型が来た場合を考慮し、実際のPoseオブジェクトを抽出する
+    s_pose = source_msg.pose.pose if hasattr(source_msg.pose, 'pose') else source_msg.pose
+    t_pose = target_msg.pose.pose if hasattr(target_msg.pose, 'pose') else target_msg.pose
+
     # 差分ベクトル
-    diff_x = target_pose.pose.position.x - source_pose.pose.position.x
-    diff_y = target_pose.pose.position.y - source_pose.pose.position.y
-    diff_z = target_pose.pose.position.z - source_pose.pose.position.z
+    diff_x = t_pose.position.x - s_pose.position.x
+    diff_y = t_pose.position.y - s_pose.position.y
+    diff_z = t_pose.position.z - s_pose.position.z
 
     v_diff = [0.0, diff_x, diff_y, diff_z]
 
     # ソースの姿勢取得
-    q_l = source_pose.pose.orientation
+    q_l = s_pose.orientation
     q_l_array = [q_l.x, q_l.y, q_l.z, q_l.w]
     
     # ターゲット姿勢取得
-    q_t = target_pose.pose.orientation
+    q_t = t_pose.orientation
     q_t_array = [q_t.x, q_t.y, q_t.z, q_t.w]
 
     # 逆クォータニオン
@@ -99,11 +151,14 @@ def process_bag_and_export_csv():
 
     # トピック情報の取得とフィルタリング
     all_topic_types = reader.get_all_topics_and_types()
-    topic_types = [t for t in all_topic_types if t.name in target_topics_list]
-    
-    if len(topic_types) < 2:
-        print(f"警告: rosbag内に指定されたトピックの一部または全部が見つかりません: {target_topics_list}")
-        # そのまま進めるとエラーになる可能性があるので終了するか確認が必要ですが、ここでは続行します
+    unique_target_topics = set(target_topics_list)
+
+    topic_types = [t for t in all_topic_types if t.name in unique_target_topics]
+
+    if len(topic_types) < len(unique_target_topics):
+        found_topics = {t.name for t in topic_types}
+        missing_topics = unique_target_topics - found_topics
+        print(f"警告: rosbag内に指定されたトピックの一部が見つかりません: {list(missing_topics)}")
 
     type_map = {topic.name: topic.type for topic in topic_types}
     
@@ -121,6 +176,11 @@ def process_bag_and_export_csv():
 
     # 状態保持用の変数
     last_source_pose = None
+    last_target_pose = None
+    
+    # 変換計算（Yaw角の算出）のための前回座標保持用
+    source_prev_x, source_prev_y = None, None
+    target_prev_x, target_prev_y = None, None
 
     # CSV出力の準備
     with open(output_filename, 'w', newline='', encoding='utf-8') as csvfile:
@@ -150,23 +210,33 @@ def process_bag_and_export_csv():
                 print(f"警告: {topic_name} のデシリアライズ失敗: {e}")
                 continue
 
-            # sourceを受信した場合は最新値を更新するのみ
+            msg_type_name = type(msg).__name__
+
+            # sourceの処理
             if topic_name == source_topic_name:
-                last_source_pose = msg
+                source_pose = msg
+                # NavSatFixなら変換する
+                if msg_type_name == 'NavSatFix':
+                    source_pose, source_prev_x, source_prev_y = convert_navsatfix_to_pose_msg(msg, source_prev_x, source_prev_y)
+                last_source_pose = source_pose
             
-            # targetを受信した場合、最新のsourceが存在すれば計算してCSVへ出力
-            elif topic_name == target_topic_name:
-                last_target_pose = msg
+            # targetの処理
+            if topic_name == target_topic_name:
+                target_pose = msg
+                # NavSatFixなら変換する
+                if msg_type_name == 'NavSatFix':
+                    target_pose, target_prev_x, target_prev_y = convert_navsatfix_to_pose_msg(msg, target_prev_x, target_prev_y)
+                last_target_pose = target_pose
                 
-                if last_source_pose is None:
-                    # まだsourceを受信していない場合はスキップ
+                if last_source_pose is None or last_target_pose is None:
+                    # sourceを未受信、またはtargetの変換に失敗した場合はスキップ
                     continue
                 
                 # 計算処理
                 diff_result = calculate_pose_difference(last_source_pose, last_target_pose, rotate_diff)
                 
                 # タイムスタンプの取得 (Targetのヘッダー時間を採用)
-                if hasattr(last_target_pose, 'header') and hasattr(last_target_pose.header, 'stamp'):
+                if hasattr(last_target_pose, 'header') and last_target_pose.header is not None and hasattr(last_target_pose.header, 'stamp'):
                     t_sec = last_target_pose.header.stamp.sec
                     t_nanosec = last_target_pose.header.stamp.nanosec
                 else:
