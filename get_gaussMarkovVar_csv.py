@@ -14,18 +14,24 @@ def calculate_diff_variance():
         diff_series = data_series.diff()
         
         # 指定された範囲内に収まるデータのみを抽出
-        if limit_col_name in df.columns:
+        if limit_col_name!='' and limit_col_name in df.columns:
             mask = (df[limit_col_name] >= lower_limit) & (df[limit_col_name] <= upper_limit)
             diff_series = diff_series[mask]
+            df = df[mask]
         
+        print(f"データ数: {len(diff_series.dropna())}")
         # NaNを除外して分散を計算 (ddof=1 で不偏分散)
         variance = diff_series.dropna().var()
+        ser_var = df[col_name].var()
+        # print(diff_series.dropna())
         
-        return variance
+        return ser_var,variance
     
     except KeyError:
         print(f"エラー: 列 '{col_name}' が見つかりません。")
     except Exception as e:
         print(f"エラーが発生しました: {e}")
 
-print(f"1ステップあたりの分散: {calculate_diff_variance()}")
+ser_var, variance = calculate_diff_variance()
+print(f"1ステップあたりの分散: {variance}")
+print(f"全体の分散: {ser_var}")
