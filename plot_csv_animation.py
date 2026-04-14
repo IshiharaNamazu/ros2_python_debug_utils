@@ -3,13 +3,17 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from plot_csv_animation_param import (
     file_name, x_col, y_col, show_line, skip_count,
-    total_duration_sec, output_filename, fps
+    total_duration_sec, output_filename, fps,
+    show_extra_display, display_col
 )
 import numpy as np
 
 def create_animation():
     """CSVデータからアニメーション動画を作成する"""
     plt.rcParams["font.size"] = 16
+
+    # テキスト表示が可能かどうかを管理するローカル変数
+    is_text_display_enabled = show_extra_display
 
     try:
         # CSV読み込み
@@ -22,6 +26,17 @@ def create_animation():
         # x軸とy軸のデータをインデックスで抽出
         x_data = df.iloc[skip_count:, x_col]
         y_data = df.iloc[skip_count:, y_col]
+
+        # 追加表示用のデータを取得
+        display_data = None
+        display_label = ''
+        if is_text_display_enabled:
+            try:
+                display_label = df.columns[display_col]
+                display_data = df.iloc[skip_count:, display_col]
+            except IndexError:
+                print(f"警告: 追加表示用の列インデックス {display_col} が範囲外です。テキスト表示は無効になります。")
+                is_text_display_enabled = False
 
     except IndexError:
         print(f"エラー: 指定された列インデックスがファイルの列数を超えています。x_col={x_col}, y_col={y_col}")
@@ -49,12 +64,26 @@ def create_animation():
     ax.set_title(f'Animation of {y_label} vs {x_label}')
     ax.grid(True)
 
+    # --- ここでテキストのフォーマットを直接指定 ---
+    # {label} には列名が、{value} には現在の値が入ります
+    # 例: 'Time: {value:.2f} s', 'Frame: {value:d}'
+    display_format = '{label}: {value:.2f}'
+
+    plot_artists = []
     # プロットオブジェクトの初期化
     if show_line:
         line, = ax.plot([], [], lw=2)
+        plot_artists.append(line)
     else:
         scatter = ax.scatter([], [], s=10)
+        plot_artists.append(scatter)
 
+    # 追加表示用のテキストオブジェクトを初期化
+    if is_text_display_enabled:
+        text_obj = ax.text(0.95, 0.95, '', transform=ax.transAxes,
+                           fontsize=14, verticalalignment='top', horizontalalignment='right',
+                           bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.5))
+        plot_artists.append(text_obj)
     num_data_points = len(x_data)
     if num_data_points == 0:
         print("エラー: スキップ後のデータが0件です。")
@@ -73,12 +102,14 @@ def create_animation():
         current_y = y_data[:data_index + 1]
         if show_line:
             line.set_data(current_x, current_y)
-            return line,
         else:
             # scatterの場合は、(x, y)のペアの配列を渡す
             scatter.set_offsets(np.c_[current_x, current_y])
-            return scatter,
 
+        if is_text_display_enabled:
+            current_display_value = display_data.iloc[data_index]
+            text_obj.set_text(display_format.format(label=display_label, value=current_display_value))
+        return tuple(plot_artists)
     # インターバルを計算
     interval_ms = 1000 / fps
 
